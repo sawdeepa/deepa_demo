@@ -1,0 +1,18 @@
+[
+  {
+    "ParameterKey": "LambdaFunctionPullDatafromApiCodeS3Bucket9vhkr",
+    "ParameterValue": "rearc-deepa-demo"
+  },
+  {
+    "ParameterKey": "LambdaFunctionPullDatafromApiCodeS3Keyk0Adq",
+    "ParameterValue": "lambda-code/pullDataFromApi.zip"
+  },
+  {
+    "ParameterKey": "LambdaFunctionReportCodeS3Bucketu9dAk",
+    "ParameterValue": "rearc-deepa-demo"
+  },
+  {
+    "ParameterKey": "LambdaFunctionReportCodeS3KeyUcJQB",
+    "ParameterValue": "lambda-code/Report.zip"
+  }
+]

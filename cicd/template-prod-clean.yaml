@@ -1,0 +1,288 @@
+---
+Metadata:
+  AWSToolsMetrics:
+    IaC_Generator: "arn:aws:cloudformation:eu-north-1:461313338667:generatedTemplate/cfaf2f88-9dc7-4e0f-a953-c4092488762d"
+Parameters:
+  LambdaFunctionPullDatafromApiCodeS3Bucket9vhkr:
+    NoEcho: "true"
+    Type: "String"
+    Description: "An Amazon S3 bucket in the same AWS-Region as your function."
+  LambdaFunctionPullDatafromApiCodeS3Keyk0Adq:
+    NoEcho: "true"
+    Type: "String"
+    Description: "The Amazon S3 key of the deployment package."
+  LambdaFunctionReportCodeS3Bucketu9dAk:
+    NoEcho: "true"
+    Type: "String"
+    Description: "An Amazon S3 bucket in the same AWS-Region as your function."
+  LambdaFunctionReportCodeS3KeyUcJQB:
+    NoEcho: "true"
+    Type: "String"
+    Description: "The Amazon S3 key of the deployment package."
+Resources:
+  S3BucketRearcdeepademoProduction:
+    UpdateReplacePolicy: "Retain"
+    Type: "AWS::S3::Bucket"
+    DeletionPolicy: "Retain"
+    Properties:
+      NotificationConfiguration:
+        QueueConfigurations:
+        - Filter:
+            S3Key:
+              Rules:
+              - Value: "raw/datausa/population"
+                Name: "Prefix"
+              - Value: ".json"
+                Name: "Suffix"
+          Event: "s3:ObjectCreated:*"
+          Queue:
+            Fn::GetAtt:
+            - "SQSQueueSQSForReportProduction"
+            - "Arn"
+      PublicAccessBlockConfiguration:
+        RestrictPublicBuckets: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+        BlockPublicAcls: true
+      BucketName: "rearc-deepa-demo-prod"
+      OwnershipControls:
+        Rules:
+        - ObjectOwnership: "BucketOwnerEnforced"
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+        - BucketKeyEnabled: false
+          ServerSideEncryptionByDefault:
+            SSEAlgorithm: "AES256"
+  
+  SQSQueueSQSForReportProduction:
+    UpdateReplacePolicy: "Retain"
+    Type: "AWS::SQS::Queue"
+    DeletionPolicy: "Retain"
+    Properties:
+      SqsManagedSseEnabled: true
+      ReceiveMessageWaitTimeSeconds: 0
+      DelaySeconds: 0
+      MessageRetentionPeriod: 345600
+      MaximumMessageSize: 1048576
+      VisibilityTimeout: 900
+      QueueName: "SQSForReportProduction"
+  
+  SQSQueuePolicy:
+    Type: "AWS::SQS::QueuePolicy"
+    Properties:
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+        - Effect: "Allow"
+          Principal:
+            Service: "s3.amazonaws.com"
+          Action: "sqs:SendMessage"
+          Resource:
+            Fn::GetAtt:
+            - "SQSQueueSQSForReportProduction"
+            - "Arn"
+          Condition:
+            ArnLike:
+              "aws:SourceArn":
+                Fn::Sub: "arn:aws:s3:::rearc-deepa-demo-prod"
+      Queues:
+      - Ref: "SQSQueueSQSForReportProduction"
+  
+  IAMRoleCopyFilesroleimaykantProduction:
+    UpdateReplacePolicy: "Retain"
+    Type: "AWS::IAM::Role"
+    DeletionPolicy: "Retain"
+    Properties:
+      Path: "/service-role/"
+      MaxSessionDuration: 3600
+      RoleName: "CopyFiles-role-imaykant_prod"
+      Policies:
+      - PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+          - Resource:
+            - "arn:aws:s3:::rearc-deepa-demo-prod"
+            - "arn:aws:s3:::rearc-deepa-demo-prod/*"
+            Action:
+            - "s3:PutObject"
+            - "s3:GetObject"
+            - "s3:ListBucket"
+            - "s3:DeleteObject"
+            Effect: "Allow"
+        PolicyName: "S3readwriterearc"
+      - PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+          - Resource:
+              Fn::GetAtt:
+              - "SQSQueueSQSForReportProduction"
+              - "Arn"
+            Action:
+            - "sqs:ReceiveMessage"
+            - "sqs:DeleteMessage"
+            - "sqs:GetQueueAttributes"
+            Effect: "Allow"
+        PolicyName: "SQSAccess"
+      - PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+          - Resource:
+              Fn::Sub: "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:pullDatafromApiProduction*"
+            Action: "lambda:InvokeFunction"
+            Effect: "Allow"
+        PolicyName: "LambdaInvoke"
+      - PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+          - Resource:
+              Fn::Sub: "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*"
+            Action: "logs:CreateLogGroup"
+            Effect: "Allow"
+          - Resource:
+            - Fn::Sub: "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/pullDatafromApiProduction:*"
+            - Fn::Sub: "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/ReportProduction:*"
+            Action:
+            - "logs:CreateLogStream"
+            - "logs:PutLogEvents"
+            Effect: "Allow"
+        PolicyName: "CloudWatchLogs"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+        - Action: "sts:AssumeRole"
+          Effect: "Allow"
+          Principal:
+            Service: "lambda.amazonaws.com"
+  
+  LambdaFunctionPullDatafromApiProduction:
+    UpdateReplacePolicy: "Retain"
+    Type: "AWS::Lambda::Function"
+    DeletionPolicy: "Retain"
+    Properties:
+      MemorySize: 128
+      Description: "Combined BLS and DataUSA sync function"
+      TracingConfig:
+        Mode: "PassThrough"
+      Timeout: 900
+      RuntimeManagementConfig:
+        UpdateRuntimeOn: "Auto"
+      Handler: "pullDataFromApi.lambda_handler"
+      Code:
+        S3Bucket:
+          Ref: "LambdaFunctionPullDatafromApiCodeS3Bucket9vhkr"
+        S3Key:
+          Ref: "LambdaFunctionPullDatafromApiCodeS3Keyk0Adq"
+      Role:
+        Fn::GetAtt:
+        - "IAMRoleCopyFilesroleimaykantProduction"
+        - "Arn"
+      FunctionName: "pullDatafromApiProduction"
+      Runtime: "python3.14"
+      PackageType: "Zip"
+      LoggingConfig:
+        LogFormat: "Text"
+        LogGroup: "/aws/lambda/pullDatafromApiProduction"
+      RecursiveLoop: "Terminate"
+      Environment:
+        Variables:
+          BLS_SYNC_USER_AGENT: "babitadeepa@gmail.com"
+          DATAUSA_SYNC_PREFIX: "raw/datausa/population/"
+          BLS_SYNC_URL: "https://download.bls.gov/pub/time.series/pr/"
+          BLS_SYNC_BUCKET: "rearc-deepa-demo-prod"
+          DATAUSA_API_URL: "https://honolulu-api.datausa.io/tesseract/data.jsonrecords?cube=acs_yg_total_population_1&drilldowns=Year%2CNation&locale=en&measures=Population"
+          BLS_SYNC_PREFIX: "raw/pr/"
+      EphemeralStorage:
+        Size: 512
+      Architectures:
+      - "x86_64"
+  
+  LambdaFunctionReportProduction:
+    UpdateReplacePolicy: "Retain"
+    Type: "AWS::Lambda::Function"
+    DeletionPolicy: "Retain"
+    Properties:
+      MemorySize: 512
+      Description: "Analytics function to generate population report"
+      TracingConfig:
+        Mode: "PassThrough"
+      Timeout: 360
+      RuntimeManagementConfig:
+        UpdateRuntimeOn: "Auto"
+      Handler: "Report.lambda_handler"
+      Code:
+        S3Bucket:
+          Ref: "LambdaFunctionReportCodeS3Bucketu9dAk"
+        S3Key:
+          Ref: "LambdaFunctionReportCodeS3KeyUcJQB"
+      Role:
+        Fn::GetAtt:
+        - "IAMRoleCopyFilesroleimaykantProduction"
+        - "Arn"
+      FunctionName: "ReportProduction"
+      Runtime: "python3.12"
+      PackageType: "Zip"
+      LoggingConfig:
+        LogFormat: "Text"
+        LogGroup: "/aws/lambda/ReportProduction"
+      RecursiveLoop: "Terminate"
+      Environment:
+        Variables:
+          POPULATION_PREFIX: "raw/datausa/population/"
+          BLS_DATA_KEY: "raw/pr/pr.data.0.Current"
+          BUCKET_NAME: "rearc-deepa-demo-prod"
+      EphemeralStorage:
+        Size: 512
+      Layers:
+      - "arn:aws:lambda:eu-north-1:336392948345:layer:AWSSDKPandas-Python312:16"
+      Architectures:
+      - "x86_64"
+  
+  LambdaEventSourceMapping:
+    UpdateReplacePolicy: "Retain"
+    Type: "AWS::Lambda::EventSourceMapping"
+    DeletionPolicy: "Retain"
+    Properties:
+      BatchSize: 10
+      FunctionName:
+        Fn::GetAtt:
+        - "LambdaFunctionReportProduction"
+        - "Arn"
+      Enabled: true
+      EventSourceArn:
+        Fn::GetAtt:
+        - "SQSQueueSQSForReportProduction"
+        - "Arn"
+      MaximumBatchingWindowInSeconds: 0
+  
+  EventsRuleRuleRunat4pmProduction:
+    UpdateReplacePolicy: "Retain"
+    Type: "AWS::Events::Rule"
+    DeletionPolicy: "Retain"
+    Properties:
+      EventBusName: "default"
+      ScheduleExpression: "cron(0 16 ? * * *)"
+      Description: "Run at 4 pm daily"
+      State: "ENABLED"
+      Targets:
+      - Arn:
+          Fn::GetAtt:
+          - "LambdaFunctionPullDatafromApiProduction"
+          - "Arn"
+        Id: "pullDatafromApiTarget"
+      Name: "Runat4pm_prod"
+  
+  LambdaPermissionFunctionpullDatafromApi:
+    UpdateReplacePolicy: "Retain"
+    Type: "AWS::Lambda::Permission"
+    DeletionPolicy: "Retain"
+    Properties:
+      FunctionName:
+        Fn::GetAtt:
+        - "LambdaFunctionPullDatafromApiProduction"
+        - "Arn"
+      Action: "lambda:InvokeFunction"
+      SourceArn:
+        Fn::GetAtt:
+        - "EventsRuleRuleRunat4pmProduction"
+        - "Arn"
+      Principal: "events.amazonaws.com"
