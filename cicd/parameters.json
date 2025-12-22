@@ -5,7 +5,7 @@
   },
   {
     "ParameterKey": "LambdaFunctionPullDatafromApiCodeS3Keyk0Adq",
-    "ParameterValue": "lambda-code/pullDataFromApi.zip"
+    "ParameterValue": "lambda-code/pullDataFromApi-v2.zip"
   },
   {
     "ParameterKey": "LambdaFunctionReportCodeS3Bucketu9dAk",
@@ -13,6 +13,6 @@
   },
   {
     "ParameterKey": "LambdaFunctionReportCodeS3KeyUcJQB",
-    "ParameterValue": "lambda-code/Report.zip"
+    "ParameterValue": "lambda-code/Report-v2.zip"
   }
 ]

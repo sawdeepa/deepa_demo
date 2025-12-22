@@ -31,13 +31,20 @@ def load_bls_data(s3_client):
     # Clean column names
     bls_data.columns = bls_data.columns.str.strip()
     
-    # Drop footnote_codes if exists
+    # Drop footnote_codes 
     if 'footnote_codes' in bls_data.columns:
         bls_data = bls_data.drop(columns=['footnote_codes'])
     
-    # Trim whitespace from all string columns
+    # Trim whitespace and uppercase all string columns
     for col in bls_data.select_dtypes(include='object').columns:
-        bls_data[col] = bls_data[col].str.strip()
+        bls_data[col] = bls_data[col].str.strip().str.upper()
+    
+    # Remove Q05 records (invalid quarterly data)
+    initial_count = len(bls_data)
+    bls_data = bls_data[bls_data['period'] != 'Q05'].copy()
+    removed_count = initial_count - len(bls_data)
+    if removed_count > 0:
+        logger.info(f"Removed {removed_count} Q05 records")
     
     logger.info(f"Loaded and cleaned BLS data: {len(bls_data):,} rows, {len(bls_data.columns)} columns")
     return bls_data
@@ -70,6 +77,10 @@ def load_population_data(s3_client):
         pop_data = pd.DataFrame(pop_json)
     else:
         pop_data = pd.DataFrame([pop_json])
+    
+    # Trim whitespace and uppercase all string columns
+    for col in pop_data.select_dtypes(include='object').columns:
+        pop_data[col] = pop_data[col].str.strip().str.upper()
     
     logger.info(f"Loaded population data: {len(pop_data):,} rows, {len(pop_data.columns)} columns")
     return pop_data
