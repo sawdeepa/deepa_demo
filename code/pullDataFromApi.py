@@ -122,6 +122,25 @@ def sync_bls_to_s3(bucket: str, user_agent: str, prefix: str, base_url: str, tim
     files = discover_bls_files(base_url, user_agent, timeout)
     logger.info(f"[Part 1] Found {len(files)} BLS files to process")
     
+    # Get current S3 files for deletion tracking
+    bls_file_names = {name for name, _, _ in files}
+    try:
+        s3_response = s3.list_objects_v2(Bucket=bucket, Prefix=prefix)
+        s3_files = []
+        if 'Contents' in s3_response:
+            for obj in s3_response['Contents']:
+                # Only track files in the direct prefix, not in deleted/ subfolder
+                key = obj['Key']
+                if key.startswith(f"{prefix}deleted/"):
+                    continue
+                filename = key.replace(prefix, "", 1)
+                if filename and "/" not in filename:  # Direct files only
+                    s3_files.append((filename, key))
+        logger.info(f"[Part 1] Found {len(s3_files)} existing files in S3")
+    except Exception as exc:
+        logger.warning(f"[Part 1] Could not list S3 files for deletion tracking: {exc}")
+        s3_files = []
+    
     # Upload each file
     uploaded = 0
     skipped = 0
@@ -145,12 +164,40 @@ def sync_bls_to_s3(bucket: str, user_agent: str, prefix: str, base_url: str, tim
             errors += 1
             logger.error(f"[Part 1]   ✗ ERROR: {name} - {exc}", exc_info=True)
     
+    # Track deletions - move orphaned files to deleted/ folder
+    moved = 0
+    orphaned_files = [filename for filename, _ in s3_files if filename not in bls_file_names]
+    
+    if orphaned_files:
+        logger.info(f"[Part 1] Found {len(orphaned_files)} orphaned files (removed from BLS)")
+        deleted_prefix = f"{prefix}deleted/"
+        
+        for filename in orphaned_files:
+            old_key = f"{prefix}{filename}"
+            new_key = f"{deleted_prefix}{filename}"
+            
+            try:
+                # Copy to deleted folder
+                s3.copy_object(
+                    Bucket=bucket,
+                    CopySource={'Bucket': bucket, 'Key': old_key},
+                    Key=new_key
+                )
+                # Delete original
+                s3.delete_object(Bucket=bucket, Key=old_key)
+                moved += 1
+                logger.info(f"[Part 1]   ↔ MOVED: {filename} → deleted/")
+            except Exception as exc:
+                errors += 1
+                logger.error(f"[Part 1]   ✗ ERROR moving {filename}: {exc}", exc_info=True)
+    
     # Summary
     logger.info("="*60)
     logger.info("[Part 1] BLS Sync Summary:")
     logger.info(f"  Total files: {len(files)}")
     logger.info(f"  Uploaded:    {uploaded}")
     logger.info(f"  Skipped:     {skipped}")
+    logger.info(f"  Moved:       {moved}")
     logger.info(f"  Errors:      {errors}")
     logger.info("="*60)
     
@@ -158,6 +205,7 @@ def sync_bls_to_s3(bucket: str, user_agent: str, prefix: str, base_url: str, tim
         "total": len(files),
         "uploaded": uploaded,
         "skipped": skipped,
+        "moved": moved,
         "errors": errors,
         "success": errors == 0
     }
@@ -363,8 +411,7 @@ def lambda_handler(event, context):
     
     results["status"] = overall_status
     
-    # Final summary
-    logger.info("\n" + "="*70)
+
     logger.info("EXECUTION SUMMARY")
     logger.info("="*70)
     logger.info(f"Overall Status: {overall_status.upper()}")
